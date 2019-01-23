@@ -1,0 +1,467 @@
+---
+title: "Predicting Blood Donations"
+author: "Raja Akkireddi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+The collected data provides an opportunity to come up with an algorithm that can help in identifying who is likely to donate again after a call out.
+
+This is just a cursory evaluation to see if the effects on a marketing call out for a certain donor type.  This is just for investigative purposes and should not be used in conjunction with the augmentation of business processes.
+
+
+The plan is to:
+  
+  Read in the data and look throw it for anything that stands out
+Do some data visualization to help see the picture of our data
+Look at correlations
+Build algorithms
+Compare algorithms and pick what works best
+
+# Preparations {.tabset .tabset-fase .tabset-pills}
+
+## Load Libraries
+
+I am loading a few key libraries for data manipulation, visualization, and model building
+
+```{r, message = FALSE}
+library("readr") 
+library("ggplot2") 
+library("dplyr")
+library("caret")
+library("corrgram")
+library("car")
+library("lubridate")
+```
+
+## Load Data
+
+Load the data and take a look at a few observations
+
+```{r echo = FALSE}
+library(readr)
+raw_data <- read_csv("C:/Users/rakkireddi/Analytics Presentations/raw.data.csv")
+View(raw_data)
+```
+
+Looks like the data was read in well and we can see that all the variables are integers
+Will convert the Made Donation in May variable into a factor and use as the response variable for the algorithms
+
+# Make names more R friendly
+names(raw_data) <- make.names(names(raw_data)) 
+
+
+```{r echo = FALSE}
+summary(raw_data)
+
+raw_data$resp = as.factor(raw_data$Made.Donation.in.May.2017)
+```
+
+Just wanted to get a rough summary of the variables in the dataset 
+Created a new variable which is a factor that will be used as the response
+
+# Basic Visualizations
+
+Let's start by doing a few basic visualizations of the data.
+
+## Months Since last Donation
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+ggplot(raw_data, aes(x = "", y = Months.since.Last.Donation)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Months since Last Donation") +
+ggtitle("Boxplot of the Months since Last Donation") 
+
+ggplot(raw_data, aes(x=Months.since.Last.Donation)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Months since Last Donation") + 
+ggtitle("Months since Last Donation Density") + 
+geom_vline(aes(xintercept=mean(Months.since.Last.Donation)), color="blue", linetype="dashed", size=1)
+
+ggplot(raw_data, aes(x = resp, y = Months.since.Last.Donation)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Months since Last Donation") +
+ggtitle("Boxplot of the Months since Last Donation across the response") 
+
+summary(raw_data$Months.since.Last.Donation)
+
+```
+
+
+The mean number of months since the last donation is 9.439 months, with the median being 7 months and the maximum is 74 months.  The data seems to have a skewness towards shorter length between donations which is good news.  Across the response as expected the mean number of months between donations is smaller for those who donated in the dataset and this group also has a smaller range.
+
+## Number of Donations
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+ggplot(raw_data, aes(x = "", y = Number.of.Donations)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Number of Donations") +
+ggtitle("Boxplot of the Number of Donations") 
+
+ggplot(raw_data, aes(x=Number.of.Donations)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Number of Donations") + 
+ggtitle("Number of Donations Density") + 
+geom_vline(aes(xintercept=mean(Number.of.Donations)), color="blue", linetype="dashed", size=1)
+
+ggplot(raw_data, aes(x = resp, y = Number.of.Donations)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Number of Donations") +
+ggtitle("Boxplot of the Number of Donations across the response") 
+
+summary(raw_data$Number.of.Donations)
+
+```
+
+The mean number of donations is 5.427, I am sure everyone would want this to be a bit higher.  The median value is 4, with the maximum value being 50.  The data has a skewedness to it similar to what we saw with regards to the number of months since the last donation, for this variable I am sure more of a bell shaped graph would be more welcome.  Those who donated blood since March they have a higher mean number of donations than their counterparts.
+
+## Total Volume Donated in cc
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+ggplot(raw_data, aes(x = "", y = Total.Volume.Donated..c.c.)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Total Volume of Blood Donated") +
+ggtitle("Boxplot of the Total Volume of Blood Donated") 
+
+ggplot(raw_data, aes(x=Total.Volume.Donated..c.c.)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Total Volume of Blood Donated") + 
+ggtitle("Total Volume of Blood Donated Density") + 
+geom_vline(aes(xintercept=mean(Total.Volume.Donated..c.c.)), color="blue", linetype="dashed", size=1)
+
+ggplot(raw_data, aes(x = resp, y = Total.Volume.Donated..c.c.)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Total Volume of Blood Donated") +
+ggtitle("Boxplot of the Total Volume of Blood Donated across the response") 
+
+summary(data$Total.Volume.Donated..c.c.)
+
+```
+
+The mean total volume of donated blood is 1357 cc, with the median being 1000 cc.  The most that has been donated is 12500 cc and the minimum that has been donated is 250 cc. We have our third straight variable that is right skewed.  The mean total volume for blood donations is higher for those who made a donation in March 2017.  
+
+## Months since First Donation
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+ggplot(data, aes(x = "", y = Months.since.First.Donation)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Months since First Donation") +
+ggtitle("Boxplot of the Months since First Donation") 
+
+ggplot(data, aes(x=Months.since.First.Donation)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Months since First Donation") + 
+ggtitle("Months since First Donation Density") + 
+geom_vline(aes(xintercept=mean(Months.since.First.Donation)), color="blue", linetype="dashed", size=1)
+
+ggplot(data, aes(x = resp, y = Months.since.First.Donation)) +
+geom_boxplot(color = "blue", fill = "red") +
+ylab("Months since First Donation") +
+ggtitle("Boxplot of the Months since First Donation across the response") 
+
+summary(data$Months.since.First.Donation)
+
+```
+
+The mean number of months since the first donation is 34.05 months with the median being 28 months.  The minimum is 2 months. This variable is not as bad in terms of how skewed it is in comparison to the other variables we have looked at already.
+
+## Response
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+ggplot(raw_data, aes(resp)) +
+geom_bar(stat = "count", aes(fill = resp)) + 
+ggtitle("Distribution of Response variable") + 
+theme(legend.position="none")
+
+```
+
+There are more records of those who have donated blood since March 2017.
+
+# Correlations
+
+Run a few things to visualize and calculate the correlations
+Create a dummy variable for gender and then drop the original variable
+
+```{r split = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+corrgram(raw_data[-1], order=NULL, lower.panel=panel.shade, upper.panel=NULL, text.panel=panel.txt,
+main="Corrgram of the data")
+
+panel.cor <- function(x, y, digits = 2, cex.cor, ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  # correlation coefficient
+  r <- cor(x, y)
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste("r= ", txt, sep = "")
+  text(0.5, 0.6, txt)
+  
+  # p-value calculation
+  p <- cor.test(x, y)$p.value
+  txt2 <- format(c(p, 0.123456789), digits = digits)[1]
+  txt2 <- paste("p= ", txt2, sep = "")
+  if(p<0.01) txt2 <- paste("p= ", "<0.01", sep = "")
+  text(0.5, 0.4, txt2)
+}
+
+pairs(raw_data[-1], upper.panel = panel.cor)
+
+scatterplot.matrix(~.|raw_data$resp, data=data[-1],
+main="Scatterplot Matrix")
+
+```
+
+As expected the umber of donations are highly correlated with the total volume of donations.  There are a few variables that are negatively correlated with each other.    
+
+
+# Models
+
+## Data Split
+
+Drop the two variables we will not need to build the algorithms
+Split the data into the training and testing sets
+Set the seed number to reproduce the results
+
+```{r}
+
+# Split the data into a training and testing set
+
+raw_data = subset(raw_data, select = -c(X , Made.Donation.in.May.2017) )
+
+set.seed(42) 
+intrain = createDataPartition(y = raw_data$resp, p = .75, list = FALSE) 
+training = data[intrain,]
+testing = data[-intrain,]
+dim(training) 
+dim(testing)
+
+```
+
+## Random Forest
+
+Get the algorithm
+Look at the important variables used in the algorithm creation
+Test the model and see how good it is
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+set.seed(42) 
+modFit_RF = train(resp ~ ., method = "rf", raw_data = training, prox = TRUE, na.action=na.omit)
+modFit_RF
+plot(modFit_RF)
+
+rf_imp = varImp(modFit_RF, scale = FALSE)
+rf_imp
+plot(rf_imp)
+
+pred_rf = predict(modFit_RF, testing)
+confusionMatrix(pred_rf, testing$resp)
+
+```
+
+The most important variable in the random forest algorithm is the month since the first donation variable.  This algorithm has an accuracy of 76.92%, which is not too bad.  Now we need to apply this to the test sample.
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+test_sample = read.csv("../input/blood-test.csv")
+
+test_sample$pred_rf = predict(modFit_RF, test_sample, type = "prob")[,2]
+
+ggplot(test_sample, aes(x=pred_rf)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Random Forest Probability") + 
+ggtitle("Probability that they donated in March") + 
+geom_vline(aes(xintercept=mean(pred_rf)), color="blue", linetype="dashed", size=1)
+
+summary(test_sample$pred_rf)
+```
+
+The mean probability that someone made a donation is 0.1994, with a median of 0.1090, range of 0 - 0.9760.
+
+
+## Classification Tree
+
+Get the algorithm
+Look at the important variables used in the algorithm creation
+Test the model and see how good it is
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+set.seed(1812) 
+modFit_CT = train(resp ~ ., method = "rpart", data = training)
+print(modFit_CT$finalModel)
+
+plot(modFit_CT$finalModel, uniform = TRUE, main = "Classification Tree")
+text(modFit_CT$finalModel, use.n = TRUE, all = TRUE, cex = 0.8)
+
+ct_imp = varImp(modFit_CT, scale = FALSE)
+ct_imp
+plot(ct_imp)
+
+pred_ct = predict(modFit_CT, testing)
+confusionMatrix(pred_ct, testing$resp)
+
+```
+
+The tree looks reasonable.  The algorithm has an accuracy of 78.32% which is not too bad.  The two most important variables for this  algorithm are Total volume and number of donations.  These two variables were highly correlated as we saw earlier.  Might have to put a pin in this model.
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+test_sample$pred_ct = predict(modFit_CT, test_sample, type = "prob")[,2]
+
+ggplot(test_sample, aes(x=pred_ct)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Classification Tree Probability") + 
+ggtitle("Probability that they donated in March") + 
+geom_vline(aes(xintercept=mean(pred_ct)), color="blue", linetype="dashed", size=1)
+
+summary(test_sample$pred_ct)
+```
+
+The mean probability that someone made a donation is 0.2360, with a median of 0.1667, range of 0.1239 - 0.6923
+
+## Logistic Regression
+
+Get the algorithm
+Look at the important variables used in the algorithm creation
+Test the model and see how good it is
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+set.seed(1812) 
+modFit_lr = train(resp ~ ., data = training, method = "glm", family = "binomial", na.action=na.omit)
+modFit_lr
+
+lr_imp = varImp(modFit_lr, scale = FALSE)
+lr_imp
+plot(lr_imp)
+
+pred_lr = predict(modFit_lr, testing)
+confusionMatrix(pred_lr, testing$resp)
+
+```
+
+There are only three variables used for this algorithm.  The three are to do with first time and last time donating and the number of donations in between.  I think these three variables make the most sense to look at.  The algorithm has an accuracy of 75.52%, not too bad.
+
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+test_sample$pred_lr = predict(modFit_lr, test_sample, type = "prob")[,2]
+
+ggplot(test_sample, aes(x=pred_lr)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Logistic Regression Probability") + 
+ggtitle("Probability that they donated in March") + 
+geom_vline(aes(xintercept=mean(pred_lr)), color="blue", linetype="dashed", size=1)
+
+summary(test_sample$pred_lr)
+```
+
+The mean probability that someone made a donation is 0.2484, with a median of 0.26410, range of 0.01032 - 0.9331
+The density plot for the predicted probabilities looks like a two hump camel.
+
+## k Nearest Neighbor
+
+Get the algorithm
+Look at the important variables used in the algorithm creation
+Test the model and see how good it is
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+set.seed(1812) 
+modFit_knn = train(resp ~ ., data = training, method = "knn", na.action=na.omit, preProcess = c("center","scale"), tuneLength = 20)
+modFit_knn
+plot(modFit_knn)
+
+knn_imp = varImp(modFit_knn, scale = FALSE)
+knn_imp
+plot(knn_imp)
+
+pred_knn = predict(modFit_knn, testing)
+confusionMatrix(pred_knn, testing$resp)
+
+```
+
+Four variables were used to build the algorithm.  Accuracy peaked just before the 20 neighors mark. The algorithm is 77.62% accurate, which is decent. 
+
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+test_sample$pred_knn = predict(modFit_knn, test_sample, type = "prob")[,2]
+
+ggplot(test_sample, aes(x=pred_knn)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("k-Nearest Neighbor Probability") + 
+ggtitle("Probability that they donated in March") + 
+geom_vline(aes(xintercept=mean(pred_knn)), color="blue", linetype="dashed", size=1)
+
+summary(test_sample$pred_knn)
+```
+
+The mean probability that someone made a donation is 0.2298, with a median of 0.1765, range of 0.0 - 0.8235
+
+## Naive Bayes
+
+Get the algorithm
+Look at the important variables used in the algorithm creation
+Test the model and see how good it is
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+set.seed(42) 
+modFit_NB = train(resp ~ ., method = "nb", data = training, prox = TRUE, na.action=na.omit)
+modFit_NB
+plot(modFit_NB)
+
+nb_imp = varImp(modFit_NB, scale = FALSE)
+nb_imp
+plot(rf_imp)
+
+pred_nb = predict(modFit_NB, testing)
+confusionMatrix(pred_nb, testing$resp)
+
+```
+
+Four predictors ares used, with months since the first donation being the most important variable.  This algorithm has an accuracy of 71.33%, which is not too bad.  Now we need to apply this to the test sample.
+
+```{r plit = FALSE, fig.align = 'default', warning = FALSE, out.width="100%"}
+
+test_sample$pred_nb = predict(modFit_NB, test_sample, type = "prob")[,2]
+
+ggplot(test_sample, aes(x=pred_nb)) + 
+geom_density() + 
+theme(legend.position="none") + 
+xlab("Naive Bayes Probability") + 
+ggtitle("Probability that they donated in March") + 
+geom_vline(aes(xintercept=mean(pred_nb)), color="blue", linetype="dashed", size=1)
+
+summary(test_sample$pred_nb)
+```
+
+The mean probability that someone made a donation is 0.2279, with a median of 0.1382, range of 0.0000003 - 1.0
+
+# Conclusions
+
+After looking at these algorithms it seems as if the best one to go with is the k-Nearest Neighbor algorithm. I know the model uses every variable, but I am okay with that.  I would have prefered the accurcy to be higher but with the work that was done we got a good enough algorithm which is better than flipping a coin.  To try and increase the accuracy of the model I would recomend trying to do some data transformations and maybe include some interaction terms in the model and see how that works.  I could not pick the classification tree algorithm because the variables used in building it were highly correlated as was shown in the correlation work.
+
